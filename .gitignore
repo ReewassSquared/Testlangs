@@ -16,6 +16,7 @@ undeflang
 weird.sh
 out.s
 dumb
+testlang.sh
 
 
 # Linker output
