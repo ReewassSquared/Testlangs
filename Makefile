@@ -7,41 +7,40 @@ else
   format=elf64
 endif
 
-gc.o: gc.s 
-	nasm -f $(format) gc.s
+# the following are compiler make directives
+compiler/var.o: compiler/var.c compiler/var.h
+	gcc -c compiler/var.c -o compiler/var.o
 
-msc.o: msc.c
-	gcc -c -fomit-frame-pointer -fno-stack-protector -falign-functions=16 msc.c
+compiler/lex.o: compiler/lex.c compiler/lex.h
+	gcc -c compiler/lex.c -o compiler/lex.o
 
-undeflang: lex.o parse.o compile.o main.o var.o
-	gcc var.o lex.o parse.o compile.o main.o -o undeflang
+compiler/parse.o: compiler/parse.c compiler/parse.h compiler/lex.h
+	gcc -c compiler/parse.c -o compiler/parse.o
 
-lex.o: lex.h lex.c
-	gcc -c lex.c
+compiler/compile.o: compiler/compile.c compiler/compile.h compiler/parse.h compiler/var.h
+	gcc -c compiler/compile.c -o compiler/compile.o
 
-parse.o: parse.h lex.h parse.c
-	gcc -c parse.c
+compiler/main.o: compiler/main.c compiler/compile.h
+	gcc -c compiler/main.c -o compiler/main.o
 
-compile.o: parse.h lex.h var.h compile.h compile.c
-	gcc -c compile.c
+poplang: compiler/var.o compiler/lex.o compiler/parse.o compiler/compile.o compiler/main.o
+	gcc compiler/var.o compiler/lex.o compiler/parse.o compiler/compile.o compiler/main.o -o poplang
+	chmod +x poplang
 
-main.o: parse.h lex.h compile.h main.c
-	gcc -c main.c
+# the following are runtime make directives
+runtime/gc.o: runtime/gc.s 
+	nasm -f $(format) runtime/gc.s
 
-var.o: var.h var.c
-	gcc -c var.c
+runtime/msc.o: runtime/msc.c
+	gcc -c -fomit-frame-pointer -fno-stack-protector -falign-functions=16 runtime/msc.c
 
-testcode: undeflang
-	./undeflang test.l
-
-compile_test: out.o undeflang.o msc.o gc.o
-	gcc -fno-stack-protector -no-pie undeflang.o msc.o gc.o out.o -o test
-
-out.o: testcode
+out.o: out.s
 	nasm -f $(format) out.s
 
-undeflang.o: undeflang.c
-	gcc -c -fno-stack-protector -falign-functions=16 undeflang.c
+runtime/poplang.o: runtime/poplang.c
+	gcc -c -fno-stack-protector -falign-functions=16 runtime/undeflang.c
 
 clean:
-	rm -f *.o undeflang out.s test
+	rm -f compiler/*.o runtime/*.o out.s out.o poplang *.exe *.out 
+
+build: poplang

@@ -3,6 +3,8 @@
 
 # Object files
 *.o
+runtime/*.o
+compiler/*.o
 *.ko
 *.obj
 *.elf
@@ -17,6 +19,9 @@ weird.sh
 out.s
 dumb
 testlang.sh
+bootstrap
+myfolder
+myfolder/*
 
 
 # Linker output
