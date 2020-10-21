@@ -32,13 +32,13 @@ runtime/gc.o: runtime/gc.s
 	nasm -f $(format) runtime/gc.s
 
 runtime/msc.o: runtime/msc.c
-	gcc -c -fomit-frame-pointer -fno-stack-protector -falign-functions=16 runtime/msc.c
+	gcc -c -fomit-frame-pointer -fno-stack-protector -falign-functions=16 runtime/msc.c -o runtime/msc.o
 
 out.o: out.s
 	nasm -f $(format) out.s
 
 runtime/poplang.o: runtime/poplang.c
-	gcc -c -fno-stack-protector -falign-functions=16 runtime/undeflang.c
+	gcc -c -fno-stack-protector -falign-functions=16 runtime/poplang.c -o runtime/poplang.o
 
 clean:
 	rm -f compiler/*.o runtime/*.o out.s out.o poplang *.exe *.out 

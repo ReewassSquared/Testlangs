@@ -3,5 +3,6 @@
 make poplang
 make runtime-bits
 ./poplang $1 
-gcc -no-pie undeflang.o msc.o gc.o out.o -o $2
+nasm -felf64 out.s
+gcc -no-pie runtime/poplang.o runtime/msc.o runtime/gc.o out.o -o $2
 ./$2
