@@ -10,7 +10,8 @@ compiler/*.o
 *.elf
 
 # Local test files
-*.l
+mytests
+mytests/*.l
 
 # Specific executable names and scripts
 test
