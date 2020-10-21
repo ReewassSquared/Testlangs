@@ -44,3 +44,5 @@ clean:
 	rm -f compiler/*.o runtime/*.o out.s out.o poplang *.exe *.out 
 
 build: poplang
+
+runtime-bits: runtime/gc.o runtime/msc.o runtime/poplang.o out.o
