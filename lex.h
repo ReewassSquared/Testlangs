@@ -73,6 +73,10 @@
 #define TOK_MTCHDF 70
 #define TOK_SUPRSS 71
 #define TOK_MUTSET 72
+#define TOK_FLOPEN 73
+#define TOK_FLWRIT 74
+#define TOK_FLCLOS 75
+#define TOK_SYMAPP 76
 #define TOK_ENDOFL 0xFFFF
 
 #define DEFAULT_TOKSTRING_SIZE 1024

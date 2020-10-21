@@ -184,7 +184,7 @@ void compile (char* path) {
 
     FILE* dst = fopen("out.s", "w+");
 
-    fprintf_c(dst, "\tglobal entry\n\textern __frame__\n\textern __gc__\n\textern __gcstack__\n\textern __gcframe__\n\textern bytes_equal\n\textern __gcal__\n\textern error\n\textern gcalloc\n\textern print_result_\n\tglobal __globalsize__\n\tglobal __globalptr__\n\tsection .data\n\talign 16\n");
+    fprintf_c(dst, "\tglobal entry\n\textern __frame__\n\textern __gc__\n\textern __gcstack__\n\textern __gcframe__\n\textern bytes_equal\n\textern __gcal__\n\textern error\n\textern gcalloc\n\textern print_result_\n\tglobal __globalsize__\n\tglobal __globalptr__\n\textern file_open_\n\textern file_write_\n\textern file_close_\n\textern symbol_append\n\tsection .data\n\talign 16\n");
 
     lexicon_t table;
     new_lexicon(&table);
@@ -207,7 +207,7 @@ void compile (char* path) {
     for (int i = 0; i < ast->clauses->len; i++) {
         if (ast->clauses->clauses[i].ntype == NODE_GLOBL) {
             char* lbl_ = add_definition(globals, ast->clauses->clauses[i].sval, gensym, 1);
-            fprintf_c(dst, "glbl%s dq 0\n", lbl_);
+            fprintf_c(dst, "glbl%s dq 0, 0\n", lbl_);
             nglobes++;
         }
     }
@@ -740,8 +740,57 @@ void compile_expr (node_t* ast, FILE* dst, lexicon_t* table) {
     case NODE_CALLF:
         compile_call(ast, dst, table, 0);
         break;
+    case NODE_FLOPN:
+        {
+            int __tail = __tail__;
+            __tail__ = 0;
+            compile_expr(ast->left, dst, table);
+            assert_type(dst, 3, TAG_STRING);
+            fprintf_c(dst, "\tmov %s, %s\n", RDI, RAX);
+            fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            fprintf_c(dst, "\tcall file_open_\n");
+            fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            __tail__ = __tail;
+        }
+        break;
+    case NODE_FLWRT:
+        {
+            int __tail = __tail__;
+            __tail__ = 0;
+            compile_expr(ast->left, dst, table);
+            fprintf_c(dst, "\tmov %s, %s\n", RDI, RAX);
+            fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            fprintf_c(dst, "\tcall file_write_\n");
+            fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            __tail__ = __tail;
+        }
+        break;
+    case NODE_FLCLS:
+        {
+            int __tail = __tail__;
+            __tail__ = 0;
+            fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            fprintf_c(dst, "\tcall file_close_\n");
+            fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            __tail__ = __tail;
+        }
+        break;
+    case NODE_MULTI:
+        {
+            if (__comp_trace__) printf("multi\n");
+            int __tail = __tail__;
+            __tail__ = 0;
+            compile_expr(ast->left, dst, table);
+            fprintf_c(dst, "\txor %s, %s\n", RAX, RAX);
+            __tail__ = __tail;
+            /* this can be safely tail called */
+            compile_expr(ast->right, dst, table);
+        }
+        break;
     case NODE_MUTST:
         {
+            int __tail = __tail__;
+            __tail__ = 0;
             offset = lookup(table, ast->sval);
             if (offset == LEXICON_NOTFOUND) {
                 if (get_definition(table, ast->sval) != NULL) {
@@ -759,6 +808,7 @@ void compile_expr (node_t* ast, FILE* dst, lexicon_t* table) {
             compile_expr(ast->left, dst, table);
             fprintf_c(dst, "\tmov [%s + %d], %s\n", RSP, -1 * COMPILER_WORDSIZE * offset, RAX);
             if (__comp_trace__) { printf("DONE compile_ident %s\n", ast->sval); }
+            __tail__ = __tail;
             break;
         }
         break;
@@ -803,6 +853,18 @@ void compile_binary (node_t* ast, FILE* dst, lexicon_t* table) {
     push_scope(table);
     int offset = bind_(table, dst, ast->l, ast->c, &sym[0]);
     switch (ast->otype) {
+    case OP_SAP:
+        compile_expr(ast->left, dst, table);
+        assert_type(dst, 16, (255 << 8) | TAG_SYMBOL);
+        fprintf_c(dst, "\tmov [%s + %d], %s\n", RSP, -1 * COMPILER_WORDSIZE * offset, RAX);
+        compile_expr(ast->right, dst, table);
+        assert_type(dst, 16, (255 << 8) | TAG_SYMBOL);
+        fprintf_c(dst, "\tmov %s, %s\n", RSI, RAX);
+        fprintf_c(dst, "\tmov %s, [%s + %d]\n", RDI, RSP, -1 * COMPILER_WORDSIZE * offset);
+        fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+        fprintf_c(dst, "\tcall symbol_append\n");
+        fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+        break;
     case OP_ADD:
         if (__comp_trace__) { printf("compile_add\n"); }
         compile_expr(ast->left, dst, table);
@@ -1067,6 +1129,13 @@ void compile_unary (node_t* ast, FILE* dst, lexicon_t* table) {
     switch (ast->otype) {
     case OP_IDT:
         compile_expr(ast->left, dst, table);
+        break;
+    case OP_PRT:
+        compile_expr(ast->left, dst, table);
+        fprintf_c(dst, "\tmov %s, %s\n", RDI, RAX);
+        fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+        fprintf_c(dst, "\tcall print_result_\n");
+        fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
         break;
     case OP_NOT:
         compile_expr(ast->left, dst, table);
@@ -1535,12 +1604,12 @@ void compile_define (node_t* ast, FILE* dst, lexicon_t* table) {
     }
 
     /* compile correctly, dammit! */
-    __tail__ = 0;
-    node_t* recurn = ast->right;
-    while(recurn != NULL) {
-        compile_expr(recurn, dst, table);
-        recurn = recurn->right;
-    }
+    //__tail__ = 0;
+    //node_t* recurn = ast->right;
+    //while(recurn != NULL) {
+    //    compile_expr(recurn, dst, table);
+    //    recurn = recurn->right;
+    //}
 
     /* what's next could be tail call */
     __tail__ = 1;

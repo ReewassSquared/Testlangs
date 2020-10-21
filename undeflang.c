@@ -2,6 +2,8 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <string.h>
+#include <errno.h>
 
 #define TAG_INT   0b000000
 #define TAG_FLAG  0b010000
@@ -31,14 +33,14 @@
 #define FLAG_FALSE   TAG_FLAG
 
 // in bytes
-#define heap_size (8 * 1024)
+#define heap_size (1024 * 1024)
 #define root_set_stack_Size (1024 * 1024)
 
 static volatile int __inside_comsym__ = 0;
 
 int64_t entry(void *);
 void print_result(int64_t);
-void print_result_(int64_t);
+int64_t print_result_(int64_t);
 void print_pair(int64_t);
 void print_immediate(int64_t);
 void print_special(uint64_t a);
@@ -48,7 +50,200 @@ uint64_t __heapsize__ = heap_size;
 uint64_t __rootsize__ = root_set_stack_Size;
 volatile uint64_t __gcstack__;
 volatile uint64_t __gcframe__;
+FILE* __CURFILE__;
 int64_t bytes_equal(int64_t a, int64_t b);
+int64_t file_open_(int64_t a);
+int64_t file_write_(int64_t a);
+int64_t file_close_();
+int64_t fprint_immediate(int64_t a);
+int64_t fprint_result(int64_t a);
+int64_t fprint_pair(int64_t a);
+int64_t symbol_append(int64_t a, int64_t b);
+
+int64_t file_open_(int64_t a) {
+    if (__CURFILE__ != NULL) {
+        printf("runtime error: tried to open a file without closing previous file.\n");
+        //exit(1);
+        return FLAG_FALSE;
+    }
+
+    a = *((int64_t*) (a ^ TAG_STRING));
+    uint64_t car;
+    int idx = 0;
+    int sz_ = 64;
+    char* buf = calloc(sz_, sizeof(char));
+    while (a != TAG_ELIST) {
+        car = *((uint64_t*) (a ^ TAG_LIST));
+        for (int i = 1; i < 8; i++) {
+            char __tmp = ((car >> (i*8)) & 0xFF);
+            if (__tmp != 0) {
+                if (4 * idx > 3 * sz_ ) {
+                    sz_ *= 2;
+                    char* __buf = calloc(sz_, sizeof(char));
+                    memcpy(__buf, buf, idx);
+                    free(buf);
+                    buf = __buf;
+                }
+                buf[idx++] = __tmp;
+            }
+        }
+        a = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+    }
+    
+    __CURFILE__ = fopen(buf, "w+");
+
+    if (__CURFILE__ == NULL) {
+        printf("runtime error: internal error: %s\n", strerror(errno));
+        return FLAG_FALSE;
+    }
+    
+    return FLAG_TRUE;
+}
+
+int64_t file_write_(int64_t a) {
+    if (__CURFILE__ == NULL) {
+        printf("runtime error: tried to write to a file without opening first.\n");
+        //exit(1);
+        return FLAG_FALSE;
+    }
+    return fprint_result(a);
+}
+
+int64_t fprint_result(int64_t a) {
+    int64_t rv = FLAG_TRUE;
+    switch (0b111 & a) {
+    case TAG_INT:
+        rv = fprint_immediate(a);
+        break;
+    case TAG_BOX:
+        rv = fprint_result(* ((int64_t*) (a ^ TAG_BOX)));
+        break;
+    case TAG_LIST:
+        fprintf(__CURFILE__, "(");
+        rv = fprint_pair(a);
+        fprintf(__CURFILE__, ")");
+        break;
+    case TAG_PROC:
+        //printf("<proc>");
+        //break;
+        {
+            uint64_t car = (*((uint64_t*) (a ^ TAG_PROC))) ^ 0x000000000000003;
+            int64_t cdr = *((int64_t*) ((a ^ TAG_PROC) + 8));
+            fprintf(__CURFILE__, "<procedure::$%lx", car);
+            if (cdr == TAG_ELIST) {
+            } else if ((0b111 & cdr) == TAG_LIST) {
+                fprintf(__CURFILE__, " env::{");
+                rv = fprint_pair(cdr);
+                fprintf(__CURFILE__, "}");
+            }
+            fprintf(__CURFILE__, ">");
+        }
+        break;
+    case TAG_STRING:
+        {
+            a = *((int64_t*) (a ^ TAG_STRING));
+            uint64_t car;
+            while (a != TAG_ELIST) {
+                car = *((uint64_t*) (a ^ TAG_LIST));
+                for (int i = 1; i < 8; i++) {
+                    char __tmp = ((car >> (i*8)) & 0xFF);
+                    if (__tmp != 0) {
+                        fprintf(__CURFILE__, "%c", __tmp);
+                    }
+                }
+                a = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+            }
+        }
+        break;
+    case TAG_SYMBOL:
+        {
+            int __tag = ((a >> 8) & 0xFF);
+            a = *((int64_t*) (a >> 16));
+            if (__tag == 0xFF) {
+                uint64_t car;
+                while (a != TAG_ELIST) {
+                    car = *((uint64_t*) (a ^ TAG_LIST));
+                    for (int i = 1; i < 8; i++) {
+                        char __tmp = ((car >> (i*8)) & 0xFF);
+                        if (__tmp != 0) {
+                            fprintf(__CURFILE__, "%c", __tmp);
+                        }
+                    }
+                    a = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+                }
+            }
+            else {
+                rv = fprint_result(a);
+            }
+        }
+        break;
+    case TAG_COMSYM:
+        {
+            fprintf(__CURFILE__, "(");
+            a = *((int64_t*) (a ^ TAG_COMSYM));
+            rv = fprint_pair(a);
+            fprintf(__CURFILE__, ")");
+        }
+        break;
+    default:
+        rv = FLAG_FALSE;
+    }
+    return rv;
+}
+
+int64_t fprint_immediate(int64_t a) {
+    switch(typeof_mask & a) {
+    case TAG_INT:
+        fprintf(__CURFILE__, "%" PRId64, a >> val_shift);
+        break;
+    case TAG_FLAG :
+        if (a & (~typeof_mask)) {
+            fprintf(__CURFILE__, "#t");
+        } else {
+            fprintf(__CURFILE__, "#f");
+        }
+        break;
+    case TAG_EMPTY: /* doesn't print anything */
+        break;
+    default:
+        return FLAG_FALSE; 
+    }
+    return FLAG_TRUE;
+}
+
+int64_t fprint_pair(int64_t a) {
+    int64_t rv = FLAG_TRUE;
+    if (a == TAG_ELIST) {
+        return FLAG_TRUE;
+    }
+    int64_t car = * ((int64_t*) (a ^ TAG_LIST));
+    int64_t cdr = * ((int64_t*) ((a + 8) ^ TAG_LIST));
+    rv = fprint_result(car);
+    if (rv == FLAG_FALSE) return rv;
+    if (cdr == TAG_ELIST) {
+
+    } else if ((0b111 & cdr) == TAG_LIST) {
+        fprintf(__CURFILE__, " ");
+        rv = fprint_pair(cdr);
+        if (rv == FLAG_FALSE) return rv;
+    } else {
+        fprintf(__CURFILE__, " . ");
+        rv = fprint_result(cdr);
+        if (rv == FLAG_FALSE) return rv;
+    }
+    return rv;
+}
+
+int64_t file_close_(int64_t a) {
+    if (__CURFILE__ == NULL) {
+        printf("runtime error: tried to write to a file without opening first.\n");
+        //exit(1);
+        return FLAG_FALSE;
+    }
+    fclose(__CURFILE__);
+    __CURFILE__ = NULL;
+    return FLAG_TRUE;
+}
 
 int64_t bytes_equal(int64_t a, int64_t b) {
     a = *((int64_t*) a);
@@ -91,10 +286,11 @@ void internal_error() {
   exit(1);
 }
 
-void print_result_(int64_t a) {
+int64_t print_result_(int64_t a) {
     //print_special(a);
     print_result(a);
     printf("\n");
+    return FLAG_TRUE;
 }
 
 void print_special(uint64_t a) {
@@ -237,4 +433,21 @@ void print_pair(int64_t a) {
         printf(" . ");
         print_result(cdr);
     }
+}
+
+int64_t symbol_append(int64_t a, int64_t b) {
+    int64_t rv = a;
+    a = (a >> 16);
+    b = *((int64_t*) (b >> 16)); /* cons bytes */
+    uint64_t car = *((int64_t*) a);
+    if (car != TAG_ELIST) {
+        a = *((int64_t*) a);
+        car = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+        while (car != TAG_ELIST) {
+            a = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+            car = *((uint64_t*) ((a ^ TAG_LIST) + 8));
+        }
+    }
+    *((uint64_t*) ((a ^ TAG_LIST) + 8)) = b;
+    return rv;
 }

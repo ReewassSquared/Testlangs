@@ -760,6 +760,18 @@ void lex_keyword (lexer_t* lex) {
     else if (!strcmp(lex->val, "set!")) {
         lex->tok = TOK_MUTSET;
     }
+    else if (!strcmp(lex->val, "file-open")) {
+        lex->tok = TOK_FLOPEN;
+    }
+    else if (!strcmp(lex->val, "file-write")) {
+        lex->tok = TOK_FLWRIT;
+    }
+    else if (!strcmp(lex->val, "file-close")) {
+        lex->tok = TOK_FLCLOS;
+    }
+    else if (!strcmp(lex->val, "symbol-append")) {
+        lex->tok = TOK_SYMAPP;
+    }
     else {
         lex->tok = TOK_IDENTF;
         return;
@@ -958,6 +970,12 @@ char* tok_name (tok_t tok) {
         return ",@";
     case TOK_SYMBOL:
         return "symbol";
+    case TOK_FLOPEN:
+        return "file-open";
+    case TOK_FLWRIT:
+        return "file-write";
+    case TOK_FLCLOS:
+        return "file-close";
     default:
         return "unk";
     }

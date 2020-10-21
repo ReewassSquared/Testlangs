@@ -24,6 +24,7 @@ void print_node (node_t* ast) {
 
 static volatile int __trace__ = 0;
 static volatile int __tok_trace__ = 0;
+static volatile int __parse_globe__ = 0;
 
 node_t* parse_expr (node_t* ast, tokstring_t* toks);
 node_t* parse_cpexpr (node_t* ast, tokstring_t* toks);
@@ -136,8 +137,10 @@ node_t* parse (tokstring_t* toks) {
             parse_make_clauses(ast->clauses, 0);
         }
         
+        __parse_globe__ = 1;
         node_t* res = newnode(malloc(sizeof(node_t)));
         res = parse_expr(res, toks);
+        __parse_globe__ = 0;
         if (tok_get(toks) == TOK_SUPRSS) {
             tok_consume(toks);
             res->supress = 1;
@@ -165,6 +168,8 @@ node_t* parse (tokstring_t* toks) {
 }
 
 node_t* parse_expr (node_t* ast, tokstring_t* toks) {
+    int __parse_globe = __parse_globe__;
+    __parse_globe__ = 0;
     switch (tok_get(toks)) {
     case TOK_MTCHDF:
         ast->l = token_get(toks).l;
@@ -328,6 +333,19 @@ node_t* parse_expr (node_t* ast, tokstring_t* toks) {
     default:
         parse_error(ast, "unexpected %s in expression", tok_name(tok_get(toks)));
     }
+
+    if (!__parse_globe && tok_get(toks) == TOK_SUPRSS) {
+        /* treat it as a multi-statement */
+        tok_consume(toks);
+        node_t* multi = newnode(malloc(sizeof(node_t)));
+        multi->l = ast->l;
+        multi->c = ast->c;
+        multi->ntype = NODE_MULTI;
+        multi->left = ast;
+        multi->right = parse_expr(newnode(malloc(sizeof(node_t))), toks);
+        ast = multi;
+    }
+    __parse_globe__ = __parse_globe;
     return ast;
 }
 
@@ -400,6 +418,7 @@ node_t* parse_cpexpr (node_t* ast, tokstring_t* toks) {
     case TOK_OROROR:
     case TOK_LENGTH:
     case TOK_NOTNOT:
+    case TOK_PRTOPR:
     case TOK_CHKCNS:
         ast = parse_unary(ast, toks);
         break;
@@ -418,6 +437,7 @@ node_t* parse_cpexpr (node_t* ast, tokstring_t* toks) {
     case TOK_BITXOR:
     case TOK_BITSHL:
     case TOK_BITSHR:
+    case TOK_SYMAPP:
         ast = parse_binary(ast, toks);
         break;
     case TOK_IFWORD:
@@ -496,26 +516,26 @@ node_t* parse_cpexpr (node_t* ast, tokstring_t* toks) {
         ast->clauses = clauses;
 
         /* right-recursive tree of expressions */
-        node_t* pnode = ast;
+        //node_t* pnode = ast;
         ast->left = parse_expr(newnode(malloc(sizeof(node_t))), toks);
-        if (tok_get(toks) == TOK_SUPRSS) {
-            ast->right = ast->left;
-            ast->left = NULL;
-        }
-        while (tok_get(toks) == TOK_SUPRSS) {
-            /* imperative-style */
-            tok_consume(toks);
-            node_t* nnode = newnode(malloc(sizeof(node_t)));
-            nnode = parse_expr(nnode, toks);
-            pnode->supress = 1;
-            if (tok_get(toks) == TOK_SUPRSS) {
-                pnode->right = nnode;
-                pnode = nnode;
-            }
-            else {
-                ast->left = nnode;
-            }
-        }        
+        //if (tok_get(toks) == TOK_SUPRSS) {
+        //    ast->right = ast->left;
+        //    ast->left = NULL;
+        //}
+        //while (tok_get(toks) == TOK_SUPRSS) {
+        //    /* imperative-style */
+        //    tok_consume(toks);
+        //    node_t* nnode = newnode(malloc(sizeof(node_t)));
+        //    nnode = parse_expr(nnode, toks);
+        //    pnode->supress = 1;
+        //    if (tok_get(toks) == TOK_SUPRSS) {
+        //        pnode->right = nnode;
+        //        pnode = nnode;
+        //    }
+        //    else {
+        //        ast->left = nnode;
+        //    }
+        //}        
 
         break;
     case TOK_LISTBD:
@@ -637,6 +657,26 @@ node_t* parse_cpexpr (node_t* ast, tokstring_t* toks) {
         parse_call(ast, toks, parse_make_clauses(clauses, 4));
         ast->clauses = clauses;
         break;
+    case TOK_FLOPEN:
+        ast->ntype = NODE_FLOPN;
+        ast->l = token_get(toks).l;
+        ast->c = token_get(toks).c;
+        tok_consume(toks);
+        ast->left = parse_expr(newnode(malloc(sizeof(node_t))), toks);
+        break;
+    case TOK_FLWRIT:
+        ast->ntype = NODE_FLWRT;
+        ast->l = token_get(toks).l;
+        ast->c = token_get(toks).c;
+        tok_consume(toks);
+        ast->left = parse_expr(newnode(malloc(sizeof(node_t))), toks);
+        break;
+    case TOK_FLCLOS:
+        ast->ntype = NODE_FLCLS;
+        ast->l = token_get(toks).l;
+        ast->c = token_get(toks).c;
+        tok_consume(toks);
+        break;
     case TOK_LAMBDA:
         if (__trace__) {
             printf("parse_lambda\n");
@@ -709,6 +749,12 @@ node_t* parse_unary (node_t* ast, tokstring_t* toks) {
     ast->ntype = NODE_IUNOP;
     ast->left = parse_expr(expr, toks);
     switch (tok) {
+    case TOK_PRTOPR:
+        if (__trace__) {
+            printf("parse_print\n");
+        }
+        ast->otype = OP_PRT;
+        break;
     case TOK_INCOPR:
         if (__trace__) {
             printf("parse_inc\n");
@@ -944,6 +990,9 @@ node_t* parse_binary (node_t* ast, tokstring_t* toks) {
     ast->left = parse_expr(newnode(malloc(sizeof(node_t))), toks);
     ast->right = parse_expr(newnode(malloc(sizeof(node_t))), toks);
     switch (tok) {
+    case TOK_SYMAPP:
+        ast->otype = OP_SAP;
+        break;
     case TOK_GTCOMP:
         if (__trace__) {
             printf("parse_greaterthan\n");
@@ -2149,22 +2198,16 @@ node_t* parse_match (node_t* ast) {
     case NODE_LQINT:
     case NODE_LQSTR:
     case NODE_LQFLG:
+    case NODE_FLCLS:
         break;
     case NODE_UQOPR:
     case NODE_QTOPR:
+    case NODE_DEFFN:
     case NODE_BINDE:
     case NODE_CLOSE:
+    case NODE_FLOPN:
+    case NODE_FLWRT:
         ast->left = parse_match(ast->left);
-        break;
-    case NODE_DEFFN:
-        {
-            node_t* recurn = ast;
-            while (recurn->right != NULL) {
-                recurn->right = parse_match(recurn->right);
-                recurn = recurn->right;
-            }
-            ast->left = parse_match(ast->left);
-        }
         break;
     case NODE_LQUOT:
     case NODE_CQUOT:
@@ -2199,6 +2242,7 @@ node_t* parse_match (node_t* ast) {
         break;
     case NODE_IBNOP:
     case NODE_MTCHC:
+    case NODE_MULTI:
     case NODE_CONDC:
         ast->left = parse_match(ast->left);
         ast->right = parse_match(ast->right);
@@ -2355,6 +2399,20 @@ void parse_printer (node_t* ast) {
     case NODE_ELIST:
         printf("() ");
         break;
+    case NODE_FLOPN:
+        printf("(file-open ");
+        parse_printer(ast->left);
+        printf(") ");
+        break;
+    case NODE_FLWRT:
+        printf("(file-write ");
+        parse_printer(ast->left);
+        printf(") ");
+        break;
+    case NODE_FLCLS:
+        printf("(file-close ");
+        printf(") ");
+        break;
     case NODE_QMARK:
         if (ast->left->ntype == NODE_IUNOP) {
             printf("(? %s ", optostring(ast->left->otype));
@@ -2394,16 +2452,6 @@ void parse_printer (node_t* ast) {
             }
         }
         printf(") ");
-        {
-            node_t* recurn = ast->right;
-            while (recurn != NULL) {
-                printf("\t");
-                parse_printer(recurn);
-                printf("#;\n");
-                recurn = recurn->right;
-            }
-        }
-        printf("\t");
         parse_printer(ast->left);
         printf(")\n\n");
         break;
@@ -2457,6 +2505,11 @@ void parse_printer (node_t* ast) {
         parse_printer(ast->left);
         parse_printer(ast->right);
         printf(") ");
+        break;
+    case NODE_MULTI:
+        parse_printer(ast->left);
+        printf("#;\n");
+        parse_printer(ast->right);
         break;
     case NODE_MTCHC:
     case NODE_CONDC:
@@ -2542,22 +2595,16 @@ node_t* parse_andor (node_t* ast) {
     case NODE_LQINT:
     case NODE_LQSTR:
     case NODE_LQFLG:
+    case NODE_FLCLS:
         break;
     case NODE_UQOPR:
     case NODE_QTOPR:
     case NODE_BINDE:
-    case NODE_CLOSE:
-        ast->left = parse_andor(ast->left);
-        break;
     case NODE_DEFFN:
-        {
-            node_t* recurn = ast;
-            while (recurn->right != NULL) {
-                recurn->right = parse_andor(recurn->right);
-                recurn = recurn->right;
-            }
-            ast->left = parse_andor(ast->left);
-        }
+    case NODE_CLOSE:
+    case NODE_FLOPN:
+    case NODE_FLWRT:
+        ast->left = parse_andor(ast->left);
         break;
     case NODE_LQUOT:
     case NODE_CQUOT:
@@ -2658,6 +2705,7 @@ node_t* parse_andor (node_t* ast) {
         break;
     case NODE_IBNOP:
     case NODE_CONDC:
+    case NODE_MULTI:
         ast->left = parse_andor(ast->left);
         ast->right = parse_andor(ast->right);
         break;

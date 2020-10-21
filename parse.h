@@ -32,6 +32,10 @@
 #define NODE_BEGIN 29
 #define NODE_GLOBL 30
 #define NODE_MUTST 31
+#define NODE_MULTI 32
+#define NODE_FLOPN 33
+#define NODE_FLWRT 34
+#define NODE_FLCLS 35
 
 #define OP_UND 0
 #define OP_ADD 1
@@ -81,6 +85,7 @@
 #define BITSHR 46
 #define OP_NOT 47
 #define CHKCNS 48
+#define OP_SAP 49
 
 #define TYPE_U 0
 #define TYPE_I 1
