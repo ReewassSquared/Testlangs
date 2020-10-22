@@ -45,4 +45,4 @@ clean:
 
 build: poplang
 
-runtime-bits: runtime/gc.o runtime/msc.o runtime/poplang.o out.o
+runtime-bits: runtime/gc.o runtime/msc.o runtime/poplang.o

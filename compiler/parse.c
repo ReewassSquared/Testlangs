@@ -22,7 +22,7 @@ void print_node (node_t* ast) {
     }
 }
 
-static volatile int __trace__ = 0;
+static volatile int __trace__ = 1;
 static volatile int __tok_trace__ = 0;
 static volatile int __parse_globe__ = 0;
 

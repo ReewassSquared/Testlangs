@@ -1010,17 +1010,33 @@ void compile_binary (node_t* ast, FILE* dst, lexicon_t* table) {
     case CMP_SE:
         /* it's complicated */
         compile_expr(ast->left, dst, table);
-        assert_type(dst, 16, (255 << 8) | TAG_SYMBOL);
+        assert_type(dst, 8, TAG_SYMBOL);
         fprintf_c(dst, "\tmov [%s + %d], %s\n", RSP, -1 * COMPILER_WORDSIZE * offset, RAX);
         compile_expr(ast->right, dst, table);
-        assert_type(dst, 16, (255 << 8) | TAG_SYMBOL);
+        assert_type(dst, 8, TAG_SYMBOL);
         fprintf_c(dst, "\tmov %s, %s\n", RSI, RAX);
+        fprintf_c(dst, "\tmov %s, %s\n", RBX, RSI);
         fprintf_c(dst, "\tshr %s, %d\n", RSI, 16);
         fprintf_c(dst, "\tmov %s, [%s + %d]\n", RDI, RSP, -1 * COMPILER_WORDSIZE * offset);
-        fprintf_c(dst, "\tshr %s, %d\n", RDI, 16);
-        fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
-        fprintf_c(dst, "\tcall bytes_equal\n");
-        fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+        fprintf_c(dst, "\tmov %s, %s\n", RCX, RDI);
+        fprintf_c(dst, "\tand %s, %d\n", RBX, 0xFFFF);
+        fprintf_c(dst, "\tand %s, %d\n", RCX, 0xFFFF);
+        fprintf_c(dst, "\tcmp %s, %s\n", RCX, RBX);
+        {
+            char symbl[30] = {0};
+            gensym(&symbl[0], "cmpse");
+            fprintf_c(dst, "\tmov %s, %d\n", RAX, mask_bool(0));
+            fprintf_c(dst, "\tjne %s\n", &symbl[0]);
+            fprintf_c(dst, "\tcmp %s, %d\n", RBX, 0xFF05);
+            fprintf_c(dst, "\tjne %s\n", &symbl[0]);
+            fprintf_c(dst, "\tcmp %s, %d\n", RCX, 0xFF05);
+            fprintf_c(dst, "\tjne %s\n", &symbl[0]);
+            fprintf_c(dst, "\tshr %s, %d\n", RDI, 16);
+            fprintf_c(dst, "\tsub %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            fprintf_c(dst, "\tcall bytes_equal\n");
+            fprintf_c(dst, "\tadd %s, %d\n", RSP, COMPILER_WORDSIZE * (lexicon_offset(table) - 1));
+            fprintf_c(dst, "%s:\n", &symbl[0]);
+        }
         break;
     case CMP_RE:
         /* it's complicated */

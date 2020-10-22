@@ -118,6 +118,8 @@ myglobal
 bestglobal
 myglobal
 
+(set! bestglobal )
+
 
 
 (define (test-imperative c g)
