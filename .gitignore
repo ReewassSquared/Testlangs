@@ -20,6 +20,8 @@ weird.sh
 out.s
 dumb
 testlang.sh
+langtester
+poplang
 bootstrap
 myfolder
 myfolder/*
